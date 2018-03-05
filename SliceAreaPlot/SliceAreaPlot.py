@@ -87,27 +87,6 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Segmentation: ", self.segmentationSelector)
 
     #
-    # Dump data check box
-    #
-    self.dumpDataCheckBox = qt.QCheckBox(" ")
-    self.dumpDataCheckBox.checked = False
-    self.dumpDataCheckBox.setToolTip("If checked, dump raw segment area data to CSV file.")
-    parametersFormLayout.addRow("Dump to CSV File:", self.dumpDataCheckBox)
-
-    #
-    # Output directory selector
-    #
-    # Output directory selector
-    self.outputDirSelector = ctk.ctkPathLineEdit()
-    self.outputDirSelector.filters = ctk.ctkPathLineEdit.Dirs
-    self.outputDirSelector.settingKey = 'ScreenCaptureOutputDir'
-    self.outputDirSelector.enabled = False
-    parametersFormLayout.addRow("Output directory:", self.outputDirSelector)
-    if not self.outputDirSelector.currentPath:
-      defaultOutputPath = os.path.abspath(os.path.join(slicer.app.defaultScenePath,'SlicerCapture'))
-      self.outputDirSelector.setCurrentPath(defaultOutputPath)
-
-    #
     # Apply Button
     #
     self.applyButton = qt.QPushButton("Apply")
@@ -132,7 +111,6 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
 
   def onSelect(self):
     inputVoxelNode = self.inputSelector.currentNode()
-#    print('Input Voxel Node:' + str(inputVoxelNode))
 
     if inputVoxelNode != None:
       self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[2]
