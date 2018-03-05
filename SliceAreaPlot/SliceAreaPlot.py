@@ -87,6 +87,27 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Segmentation: ", self.segmentationSelector)
 
     #
+    # Dump data check box
+    #
+    self.dumpDataCheckBox = qt.QCheckBox(" ")
+    self.dumpDataCheckBox.checked = False
+    self.dumpDataCheckBox.setToolTip("If checked, dump raw segment area data to CSV file.")
+    parametersFormLayout.addRow("Dump to CSV File:", self.dumpDataCheckBox)
+
+    #
+    # Output directory selector
+    #
+    # Output directory selector
+    self.outputDirSelector = ctk.ctkPathLineEdit()
+    self.outputDirSelector.filters = ctk.ctkPathLineEdit.Dirs
+    self.outputDirSelector.settingKey = 'ScreenCaptureOutputDir'
+    self.outputDirSelector.enabled = False
+    parametersFormLayout.addRow("Output directory:", self.outputDirSelector)
+    if not self.outputDirSelector.currentPath:
+      defaultOutputPath = os.path.abspath(os.path.join(slicer.app.defaultScenePath,'SlicerCapture'))
+      self.outputDirSelector.setCurrentPath(defaultOutputPath)
+
+    #
     # Apply Button
     #
     self.applyButton = qt.QPushButton("Apply")
@@ -98,6 +119,7 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
     self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.segmentationSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
+    self.dumpDataCheckBox.connect('toggled(bool)', self.onSelect)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -109,9 +131,13 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     pass
 
   def onSelect(self):
-    voxelArray = slicer.util.array(self.inputSelector.currentNode().GetID())
-    self.numSlices = np.shape(voxelArray)[0]
-    self.segmentationNode = self.segmentationSelector.currentNode()
+    inputVoxelNode = self.inputSelector.currentNode()
+#    print('Input Voxel Node:' + str(inputVoxelNode))
+
+    if inputVoxelNode != None:
+      self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[2]
+      self.segmentationNode = self.segmentationSelector.currentNode()
+      self.outputDirSelector.setEnabled(self.dumpDataCheckBox.checked)
 
   def onApplyButton(self):
     logic = SliceAreaPlotLogic()
@@ -158,20 +184,45 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     if visibleSegmentIds.GetNumberOfValues() == 0:
       logging.debug("computeStatistics will not return any results: there are no visible segments")
 
+    #
+    # Make a table and set the first column as the slice number. This is used
+    # as the X axis for plots.
+    #
     tableNode=slicer.mrmlScene.AddNewNodeByClass("vtkMRMLTableNode", "Segment quantification")
-    plotDataNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotDataNode")
-    plotChartNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotChartNode")
+    table = tableNode.GetTable()
+    sliceNumberArray = vtk.vtkFloatArray()
 
+    sliceNumberArray = vtk.vtkFloatArray()
+    sliceNumberArray.SetName("Slice number")
+    table.AddColumn(sliceNumberArray)
+    table.SetNumberOfRows(numSlices)
+    for i in range(numSlices):
+      table.SetValue(i, 0, i)
+
+    # Make a plot chart node. Plot series nodes will be added to this in the
+    # loop below that iterates over each segment.
+    plotChartNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotChartNode")
+    plotChartNode.SetTitle('Slice area')
+    plotChartNode.SetXAxisTitle('Something in x')
+    plotChartNode.SetYAxisTitle('Something in y')
+
+    #
+    # For each segment, get the area and put it in the table in a new column.
+    #
     for segmentIndex in range(visibleSegmentIds.GetNumberOfValues()):
       segmentID = visibleSegmentIds.GetValue(segmentIndex)
       vimage = segmentationNode.GetBinaryLabelmapRepresentation(segmentID)
       firstSlice = vimage.GetExtent()[4]
       lastSlice = vimage.GetExtent()[5]
 
+      # Get segment as numpy array. This results in one big one-dimensional array, in order, of all
+      # voxel values.
       narray = vtk.util.numpy_support.vtk_to_numpy(vimage.GetPointData().GetScalars())
-      vshape = vimage.GetDimensions()
 
-      # Reshape the segment volume to have an array of slices
+      # Reshape the segment volume to have an array of slices. This resuls in a 2-dimensional
+      # array, where the first index is into each slice and the second index is basically
+      # a one-d array that contains all voxel data for that slice. 
+      vshape = vimage.GetDimensions()
       #narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
       narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
 
@@ -190,19 +241,32 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       areaBySliceInMm2 = np.insert(areaBySliceInMm2, np.zeros(numFrontSlices,), 0)
       areaBySliceInMm2 = np.append(areaBySliceInMm2, np.zeros(numBackSlices))
 
-      slicer.util.updateTableFromArray(tableNode, areaBySliceInMm2)
-      tableNode.GetTable().GetColumn(segmentIndex).SetName(segmentID)
+      # Convert back to a vtk array for insertion into the table.
+      vtk_data_array = vtk.util.numpy_support.numpy_to_vtk(areaBySliceInMm2)
+      vtk_data_array.SetName(segmentID)
+      tableNode.AddColumn(vtk_data_array)
 
-      plotDataNode.SetAndObserveTableNodeID(tableNode.GetID())
-      plotDataNode.SetXColumnName("Indexes")
-      plotDataNode.SetYColumnName(tableNode.GetTable().GetColumn(segmentIndex).GetName())
+      # Make a plot series node for this column.
+      plotSeriesNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotSeriesNode", segmentID)
+      plotSeriesNode.SetAndObserveTableNodeID(tableNode.GetID())
+      plotSeriesNode.SetXColumnName("Slice number")
+      plotSeriesNode.SetYColumnName(segmentID)
+      plotSeriesNode.SetUniqueColor()
 
-      plotChartNode.AddAndObservePlotDataNodeID(plotDataNode.GetID())
+      # Add this series to the plot chart node created above.
+      plotChartNode.AddAndObservePlotSeriesNodeID(plotSeriesNode.GetID())
+      
 
+    #
+    # Looping done - now all that's left to do is display it.
+    #
     layoutManager = slicer.app.layoutManager()
-    layoutManager.setLayout(slicer.vtkMRMLLayoutNode.SlicerLayoutFourUpPlotView)
-    plotWidget = layoutManager.plotWidget(0)
+    layoutWithPlot = slicer.modules.plots.logic().GetLayoutWithPlot(layoutManager.layout)
+    layoutManager.setLayout(layoutWithPlot)
 
+    # Select chart in plot view
+
+    plotWidget = layoutManager.plotWidget(0)
     plotViewNode = plotWidget.mrmlPlotViewNode()
     plotViewNode.SetPlotChartNodeID(plotChartNode.GetID())
 
