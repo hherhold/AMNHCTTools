@@ -211,6 +211,7 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     #
     for segmentIndex in range(visibleSegmentIds.GetNumberOfValues()):
       segmentID = visibleSegmentIds.GetValue(segmentIndex)
+      segmentName = segmentationNode.GetSegmentation().GetSegment(segmentID).GetName()
       vimage = segmentationNode.GetBinaryLabelmapRepresentation(segmentID)
       firstSlice = vimage.GetExtent()[4]
       lastSlice = vimage.GetExtent()[5]
@@ -243,14 +244,14 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
 
       # Convert back to a vtk array for insertion into the table.
       vtk_data_array = vtk.util.numpy_support.numpy_to_vtk(areaBySliceInMm2)
-      vtk_data_array.SetName(segmentID)
+      vtk_data_array.SetName(segmentName)
       tableNode.AddColumn(vtk_data_array)
 
       # Make a plot series node for this column.
-      plotSeriesNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotSeriesNode", segmentID)
+      plotSeriesNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotSeriesNode", segmentName)
       plotSeriesNode.SetAndObserveTableNodeID(tableNode.GetID())
       plotSeriesNode.SetXColumnName("Slice number")
-      plotSeriesNode.SetYColumnName(segmentID)
+      plotSeriesNode.SetYColumnName(segmentName)
       plotSeriesNode.SetUniqueColor()
 
       # Add this series to the plot chart node created above.
