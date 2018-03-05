@@ -203,8 +203,8 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     # loop below that iterates over each segment.
     plotChartNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotChartNode")
     plotChartNode.SetTitle('Slice area')
-    plotChartNode.SetXAxisTitle('Something in x')
-    plotChartNode.SetYAxisTitle('Something in y')
+    plotChartNode.SetXAxisTitle('Slice')
+    plotChartNode.SetYAxisTitle('Area in mm^2')
 
     #
     # For each segment, get the area and put it in the table in a new column.
