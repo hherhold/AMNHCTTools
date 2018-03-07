@@ -10,6 +10,8 @@ import numpy as np
 #
 # SliceAreaPlot
 #
+# Computes and plots the cross sectional area along a specified axis of all visible segments.
+#
 
 class SliceAreaPlot(ScriptedLoadableModule):
   """Uses ScriptedLoadableModule base class, available at:
@@ -18,7 +20,7 @@ class SliceAreaPlot(ScriptedLoadableModule):
 
   def __init__(self, parent):
     ScriptedLoadableModule.__init__(self, parent)
-    self.parent.title = "Slice Area Plot" # TODO make this more human readable by adding spaces
+    self.parent.title = "Slice Area Plot"
     self.parent.categories = ["Quantification"]
     self.parent.dependencies = []
     self.parent.contributors = ["Hollister Herhold (AMNH)"] 
@@ -87,10 +89,20 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     parametersFormLayout.addRow("Segmentation: ", self.segmentationSelector)
 
     #
+    # Direction selector
+    #
+    self.directionSelectorWidget = qt.QComboBox()
+    self.directionSelectorWidget.setToolTip("Select the direction of sweep for area calculation.")
+    self.directionSelectorWidget.addItem("Axial")
+#    self.directionSelectorWidget.addItem("Coronal")
+#    self.directionSelectorWidget.addItem("Saggital")
+    parametersFormLayout.addRow("Direction:", self.directionSelectorWidget)
+
+    #
     # Apply Button
     #
-    self.applyButton = qt.QPushButton("Apply")
-    self.applyButton.toolTip = "Run the algorithm."
+    self.applyButton = qt.QPushButton("Plot")
+    self.applyButton.toolTip = "Make the plot(s)."
     self.applyButton.enabled = True
     parametersFormLayout.addRow(self.applyButton)
 
@@ -98,7 +110,7 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     self.applyButton.connect('clicked(bool)', self.onApplyButton)
     self.inputSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
     self.segmentationSelector.connect("currentNodeChanged(vtkMRMLNode*)", self.onSelect)
-    self.dumpDataCheckBox.connect('toggled(bool)', self.onSelect)
+    self.directionSelectorWidget.connect("currentIndexChanged(int)", self.onSelect)
 
     # Add vertical spacer
     self.layout.addStretch(1)
@@ -111,15 +123,21 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
 
   def onSelect(self):
     inputVoxelNode = self.inputSelector.currentNode()
-
     if inputVoxelNode != None:
-      self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[2]
       self.segmentationNode = self.segmentationSelector.currentNode()
-      self.outputDirSelector.setEnabled(self.dumpDataCheckBox.checked)
+      self.direction = self.directionSelectorWidget.currentText
+
+      if self.direction == "Saggital":
+        self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[0]
+      if self.direction == "Coronal":
+        self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[1]
+      if self.direction == "Axial":
+        self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[2]
+      
 
   def onApplyButton(self):
     logic = SliceAreaPlotLogic()
-    logic.run(self.numSlices, self.segmentationNode)
+    logic.run(self.numSlices, self.segmentationNode, self.direction)
 
 #
 # SliceAreaPlotLogic
@@ -148,12 +166,12 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       return False
     return True
 
-  def run(self, numSlices, segmentationNode):
+  def run(self, numSlices, segmentationNode, direction):
     """
     Run the actual algorithm
     """
 
-    logging.info('Processing started')
+    logging.info('----------------- Processing started -----------------')
 
     # Get visible segment ID list.
     # Get segment ID list
@@ -180,7 +198,7 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     # Make a plot chart node. Plot series nodes will be added to this in the
     # loop below that iterates over each segment.
     plotChartNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLPlotChartNode")
-    plotChartNode.SetTitle('Slice area')
+    plotChartNode.SetTitle(direction + ' slice area')
     plotChartNode.SetXAxisTitle('Slice')
     plotChartNode.SetYAxisTitle('Area in mm^2')
 
@@ -191,8 +209,15 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       segmentID = visibleSegmentIds.GetValue(segmentIndex)
       segmentName = segmentationNode.GetSegmentation().GetSegment(segmentID).GetName()
       vimage = segmentationNode.GetBinaryLabelmapRepresentation(segmentID)
-      firstSlice = vimage.GetExtent()[4]
-      lastSlice = vimage.GetExtent()[5]
+      if direction == "Saggital":
+        firstSlice = vimage.GetExtent()[0]
+        lastSlice = vimage.GetExtent()[1]
+      if direction == "Coronal":
+        firstSlice = vimage.GetExtent()[2]
+        lastSlice = vimage.GetExtent()[3]
+      if direction == "Axial":
+        firstSlice = vimage.GetExtent()[4]
+        lastSlice = vimage.GetExtent()[5]
 
       # Get segment as numpy array. This results in one big one-dimensional array, in order, of all
       # voxel values.
@@ -202,8 +227,39 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       # array, where the first index is into each slice and the second index is basically
       # a one-d array that contains all voxel data for that slice. 
       vshape = vimage.GetDimensions()
+
+      print('Segment: ' + segmentName)
+      print('Direction: ' + direction)
+      print('Shape: ' + str(vshape))
+
+      # Original example from Andras.
       #narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
-      narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
+
+      print('Array:')
+      print(str(narray))
+
+      # This is an array of slices in the axial direction.
+      if direction == "Axial":
+        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
+      if direction == "Coronal":
+        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[2]])
+        narrayBySlice = np.rot90(narrayBySlice, 1, (1,0))
+      if direction == "Saggital":
+#        narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
+
+#        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
+        print('Reshape 1:')
+        print(str(narrayBySlice))
+
+#        narrayBySlice = np.rot90(narrayBySlice,-1)
+#        print('Rotated:')
+#        print(str(narrayBySlice))
+#        narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
+#        print('Reshape 2:')
+#        print(str(narrayBySlice))
+
+      print('Reshaped Array:')
+      print(str(narrayBySlice))
 
       # Count number of >0 voxels for each slice
       narrayBySlicePositive = narrayBySlice[:]>0
