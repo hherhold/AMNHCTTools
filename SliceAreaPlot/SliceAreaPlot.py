@@ -94,8 +94,8 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
     self.directionSelectorWidget = qt.QComboBox()
     self.directionSelectorWidget.setToolTip("Select the direction of sweep for area calculation.")
     self.directionSelectorWidget.addItem("Axial")
-#    self.directionSelectorWidget.addItem("Coronal")
-#    self.directionSelectorWidget.addItem("Saggital")
+    self.directionSelectorWidget.addItem("Coronal")
+    self.directionSelectorWidget.addItem("Saggital")
     parametersFormLayout.addRow("Direction:", self.directionSelectorWidget)
 
     #
@@ -127,6 +127,7 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
       self.segmentationNode = self.segmentationSelector.currentNode()
       self.direction = self.directionSelectorWidget.currentText
 
+      ### TODO - handle empty scene condition
       if self.direction == "Saggital":
         self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[0]
       if self.direction == "Coronal":
@@ -223,43 +224,39 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       # voxel values.
       narray = vtk.util.numpy_support.vtk_to_numpy(vimage.GetPointData().GetScalars())
 
+      #
       # Reshape the segment volume to have an array of slices. This resuls in a 2-dimensional
       # array, where the first index is into each slice and the second index is basically
-      # a one-d array that contains all voxel data for that slice. 
+      # a one-d array that contains all voxel data for that slice.
+      #
+      # The shape elements are as follows:
+      #   (saggital, coronal, axial)
       vshape = vimage.GetDimensions()
-
       print('Segment: ' + segmentName)
       print('Direction: ' + direction)
-      print('Shape: ' + str(vshape))
-
-      # Original example from Andras.
-      #narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
+      print('Initial shape: ' + str(vshape))
+      print('(saggital, coronal, axial)')
 
       print('Array:')
       print(str(narray))
 
-      # This is an array of slices in the axial direction.
+      s = vshape[0]   # 11
+      c = vshape[1]   # 3
+      a = vshape[2]   # 8
+
+      # Make into 3D array.
+      narray_3D = narray.reshape((a, c, s))
+      print('3D array:')
+      print(str(narray_3D))
+
       if direction == "Axial":
-        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
+        narrayBySlice = narray_3D.reshape([-1,s*c])
+
       if direction == "Coronal":
-        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[2]])
-        narrayBySlice = np.rot90(narrayBySlice, 1, (1,0))
+        narrayBySlice = (narray_3D.swapaxes(0,1)).reshape(-1,s*a)
+        
       if direction == "Saggital":
-#        narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
-
-#        narrayBySlice = narray.reshape([-1,vshape[0]*vshape[1]])
-        print('Reshape 1:')
-        print(str(narrayBySlice))
-
-#        narrayBySlice = np.rot90(narrayBySlice,-1)
-#        print('Rotated:')
-#        print(str(narrayBySlice))
-#        narrayBySlice = narray.reshape([-1,vshape[1]*vshape[2]])
-#        print('Reshape 2:')
-#        print(str(narrayBySlice))
-
-      print('Reshaped Array:')
-      print(str(narrayBySlice))
+        narrayBySlice = (narray_3D.transpose()).reshape(-1,c*a)
 
       # Count number of >0 voxels for each slice
       narrayBySlicePositive = narrayBySlice[:]>0
@@ -267,11 +264,13 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
 
       # Convert number of voxels to area in mm2
       areaOfPixelMm2 = vimage.GetSpacing()[0] * vimage.GetSpacing()[1]
-      areaBySliceInMm2 = areaBySliceInVoxels * areaOfPixelMm2
+
+      print('** NOT DOING CONVERSION TO AREA IN mm^2 **')
+      areaBySliceInMm2 = areaBySliceInVoxels # * areaOfPixelMm2
 
       # Insert number of empty slices into front of array and back of array so that
       # array is whole extent of data
-      numFrontSlices = firstSlice - 1
+      numFrontSlices = firstSlice
       numBackSlices = numSlices - lastSlice
       areaBySliceInMm2 = np.insert(areaBySliceInMm2, np.zeros(numFrontSlices,), 0)
       areaBySliceInMm2 = np.append(areaBySliceInMm2, np.zeros(numBackSlices))
