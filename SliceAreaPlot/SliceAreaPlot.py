@@ -127,7 +127,6 @@ class SliceAreaPlotWidget(ScriptedLoadableModuleWidget):
       self.segmentationNode = self.segmentationSelector.currentNode()
       self.direction = self.directionSelectorWidget.currentText
 
-      ### TODO - handle empty scene condition
       if self.direction == "Saggital":
         self.numSlices = inputVoxelNode.GetImageData().GetDimensions()[0]
       if self.direction == "Coronal":
@@ -172,14 +171,14 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     Run the actual algorithm
     """
 
-    logging.info('----------------- Processing started -----------------')
+    print('numSlices = ' + str(numSlices))
 
     # Get visible segment ID list.
     # Get segment ID list
     visibleSegmentIds = vtk.vtkStringArray()
     segmentationNode.GetDisplayNode().GetVisibleSegmentIDs(visibleSegmentIds)
     if visibleSegmentIds.GetNumberOfValues() == 0:
-      logging.debug("computeStatistics will not return any results: there are no visible segments")
+      logging.debug("SliceAreaPlot will not return any results: there are no visible segments")
 
     #
     # Make a table and set the first column as the slice number. This is used
@@ -232,22 +231,13 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       # The shape elements are as follows:
       #   (saggital, coronal, axial)
       vshape = vimage.GetDimensions()
-      print('Segment: ' + segmentName)
-      print('Direction: ' + direction)
-      print('Initial shape: ' + str(vshape))
-      print('(saggital, coronal, axial)')
 
-      print('Array:')
-      print(str(narray))
-
-      s = vshape[0]   # 11
-      c = vshape[1]   # 3
-      a = vshape[2]   # 8
+      s = vshape[0]
+      c = vshape[1]
+      a = vshape[2]
 
       # Make into 3D array.
       narray_3D = narray.reshape((a, c, s))
-      print('3D array:')
-      print(str(narray_3D))
 
       if direction == "Axial":
         narrayBySlice = narray_3D.reshape([-1,s*c])
@@ -265,8 +255,7 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
       # Convert number of voxels to area in mm2
       areaOfPixelMm2 = vimage.GetSpacing()[0] * vimage.GetSpacing()[1]
 
-      print('** NOT DOING CONVERSION TO AREA IN mm^2 **')
-      areaBySliceInMm2 = areaBySliceInVoxels # * areaOfPixelMm2
+      areaBySliceInMm2 = areaBySliceInVoxels  * areaOfPixelMm2
 
       # Insert number of empty slices into front of array and back of array so that
       # array is whole extent of data
@@ -303,8 +292,6 @@ class SliceAreaPlotLogic(ScriptedLoadableModuleLogic):
     plotWidget = layoutManager.plotWidget(0)
     plotViewNode = plotWidget.mrmlPlotViewNode()
     plotViewNode.SetPlotChartNodeID(plotChartNode.GetID())
-
-    logging.info('Processing completed')
 
     return True
 
